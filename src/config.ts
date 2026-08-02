@@ -14,7 +14,11 @@ type DBConfig = {
   migrationConfig: MigrationConfig;
 };
 
-process.loadEnvFile();
+try {
+  process.loadEnvFile();
+} catch {
+  // Ignore missing .env file in containerized environments.
+}
 
 function envOrThrow(key: string) {
   // eslint-disable-next-line security/detect-object-injection
