@@ -1,13 +1,12 @@
-import postgres from 'postgres';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 import * as schema from "./schema.js";
 import { config } from "../config.js";
 
-
 const DB_URL = config.db.url;
 if (!DB_URL) {
-  throw new Error('DATABASE_URL environment variable is required');
+  throw new Error("DATABASE_URL environment variable is required");
 }
 
 export async function runMigrations(): Promise<void> {
@@ -18,4 +17,3 @@ export async function runMigrations(): Promise<void> {
     await migrationClient.end();
   }
 }
-

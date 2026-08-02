@@ -14,7 +14,6 @@ type DBConfig = {
   migrationConfig: MigrationConfig;
 };
 
-
 process.loadEnvFile();
 
 function envOrThrow(key: string) {
