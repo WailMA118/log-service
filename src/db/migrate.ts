@@ -1,7 +1,6 @@
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import * as schema from "./schema.js";
 import { config } from "../config.js";
 
 const DB_URL = config.db.url;
