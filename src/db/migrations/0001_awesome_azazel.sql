@@ -1,0 +1,1 @@
+ALTER TABLE "logs" ALTER COLUMN "attributes" DROP NOT NULL;

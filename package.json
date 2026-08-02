@@ -19,7 +19,9 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/eslint-plugin-security": "^3.0.1",
+    "@types/express": "^5.0.1",
     "@types/node": "^26.1.2",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^10.8.0",
     "eslint-plugin-security": "^4.0.1",
     "globals": "^17.8.0",
@@ -27,5 +29,10 @@
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "express": "^5.2.1",
+    "postgres": "^3.4.9"
   }
 }
