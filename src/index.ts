@@ -16,7 +16,7 @@ async function bootstrap(): Promise<void> {
   console.log("[bootstrap] migrations applied");
 
   const app = createApp();
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`[bootstrap] listening on port ${PORT}`);
   });
 
