@@ -31,9 +31,7 @@ if (!DB_URL) {
 
 const MIGRATIONS_TABLE = "_app_migrations";
 
-async function ensureMigrationsTable(
-  sql: postgres.Sql,
-): Promise<void> {
+async function ensureMigrationsTable(sql: postgres.Sql): Promise<void> {
   await sql`
     CREATE TABLE IF NOT EXISTS ${sql(MIGRATIONS_TABLE)} (
       id SERIAL PRIMARY KEY,
@@ -43,9 +41,7 @@ async function ensureMigrationsTable(
   `;
 }
 
-async function getAppliedMigrations(
-  sql: postgres.Sql,
-): Promise<Set<string>> {
+async function getAppliedMigrations(sql: postgres.Sql): Promise<Set<string>> {
   const rows = await sql<{ filename: string }[]>`
     SELECT filename FROM ${sql(MIGRATIONS_TABLE)}
   `;
@@ -76,6 +72,32 @@ async function applyMigrationFile(
 }
 
 /**
+ * The migrations directory is fixed at build time (it sits next to this
+ * compiled file) -- it is never derived from request input, user input,
+ * or any other untrusted source. The two fs calls below therefore trip
+ * eslint-plugin-security's non-literal-fs-filename rule as a false
+ * positive; suppressed with justification at each call site rather than
+ * disabled globally.
+ */
+async function listMigrationSqlFiles(
+  migrationsPath: string,
+): Promise<string[]> {
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- migrationsPath is derived from import.meta.url at build time, not from any external input
+    const entries = await readdir(migrationsPath);
+    return entries.filter((f) => f.endsWith(".sql")).sort();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      console.log(
+        "[migrate] no migrations directory found; skipping migration run",
+      );
+      return [];
+    }
+    throw err;
+  }
+}
+
+/**
  * Runs all .sql files under src/db/migrations in filename order, skipping
  * any already recorded as applied. Retries the whole connect+run sequence
  * on transient failure (e.g. Postgres container still starting) --
@@ -88,20 +110,11 @@ export async function runMigrations(
   maxAttempts = 5,
   delayMs = 2000,
 ): Promise<void> {
-  const migrationsDir = new URL("./migrations", import.meta.url);
-  const migrationsPath = fileURLToPath(migrationsDir);
-
-  let sqlFiles: string[] = [];
-  try {
-    const entries = await readdir(migrationsPath);
-    sqlFiles = entries.filter((f) => f.endsWith(".sql")).sort();
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      console.log("[migrate] no migrations directory found; skipping migration run");
-      return;
-    }
-    throw err;
-  }
+  const migrationsPath = fileURLToPath(
+    new URL("./migrations", import.meta.url),
+  );
+  const sqlFiles = await listMigrationSqlFiles(migrationsPath);
+  if (sqlFiles.length === 0) return;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const migrationClient = postgres(DB_URL, { max: 1 });
@@ -111,19 +124,15 @@ export async function runMigrations(
 
       for (const filename of sqlFiles) {
         if (applied.has(filename)) continue;
-        const fileContents = await readFile(
-          path.join(migrationsPath, filename),
-          "utf-8",
-        );
+        const filePath = path.join(migrationsPath, filename);
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- filePath is built from migrationsPath (fixed, build-time) joined with a filename returned by readdir() on that same directory, not from external input
+        const fileContents = await readFile(filePath, "utf-8");
         console.log(`[migrate] applying ${filename}`);
         await applyMigrationFile(migrationClient, filename, fileContents);
       }
       return;
     } catch (err) {
-      console.error(
-        `[migrate] attempt ${attempt}/${maxAttempts} failed:`,
-        err,
-      );
+      console.error(`[migrate] attempt ${attempt}/${maxAttempts} failed:`, err);
       if (attempt === maxAttempts) throw err;
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     } finally {
