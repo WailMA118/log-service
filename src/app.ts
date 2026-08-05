@@ -5,7 +5,7 @@ import express, {
   type NextFunction,
 } from "express";
 import { healthRouter } from "./routes/health.js";
-import { ingestRouter } from "./routes/logs.js";
+import { ingestRouter, queryRouter } from "./routes/logs.js";
 
 export function createApp(): Express {
   const app = express();
@@ -19,6 +19,7 @@ export function createApp(): Express {
   // the literal "/logs", not a prefix match, but this ordering keeps
   // the more specific route first defensively).
   app.use(ingestRouter);
+  app.use(queryRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "not found" });
