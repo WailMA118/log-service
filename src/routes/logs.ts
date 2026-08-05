@@ -1,9 +1,15 @@
 import { Router, type Request, type Response } from "express";
-import { ingestClient } from "../db/client.js";
+import { and, desc, gte, lt, or, eq } from "drizzle-orm";
+import { ingestClient, db } from "../db/client.js";
+import { logs } from "../db/schema.js";
 import { validateBatch } from "../logs/validation.js";
-import type { ValidatedLogEntry } from "../logs/types.js";
+import type { ValidatedLogEntry, LogRecord } from "../logs/types.js";
+import { DEFAULT_LIMIT, MAX_LIMIT } from "../logs/types.js";
+import { parseSharedFilters, buildFilterConditions } from "../logs/filters.js";
+import { decodeCursor, encodeCursor } from "../logs/cursor.js";
 
 export const ingestRouter = Router();
+export const queryRouter = Router();
 
 // ============================================================================
 // POST /logs
@@ -67,4 +73,149 @@ ingestRouter.post("/logs", async (req: Request, res: Response) => {
   }
 
   res.status(200).json({ accepted: accepted.length, rejected });
+});
+
+// ============================================================================
+// GET /logs
+// ============================================================================
+
+function parseTimeParam(
+  value: unknown,
+  paramName: string,
+): { ok: true; date: Date | undefined } | { ok: false; error: string } {
+  if (value === undefined) return { ok: true, date: undefined };
+  if (typeof value !== "string") {
+    return { ok: false, error: `${paramName} must be a single string` };
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return {
+      ok: false,
+      error: `invalid timestamp for ${paramName}: '${value}'`,
+    };
+  }
+  return { ok: true, date };
+}
+
+function parseLimitParam(
+  value: unknown,
+): { ok: true; limit: number } | { ok: false; error: string } {
+  if (value === undefined) return { ok: true, limit: DEFAULT_LIMIT };
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return { ok: false, error: "limit must be a single numeric value" };
+  }
+  if (!/^\d+$/.test(value)) {
+    return { ok: false, error: "limit must be a non-negative integer" };
+  }
+  const limit = Number(value);
+  if (limit < 1 || limit > MAX_LIMIT) {
+    return { ok: false, error: `limit must be between 1 and ${MAX_LIMIT}` };
+  }
+  return { ok: true, limit };
+}
+
+function toLogRecord(row: typeof logs.$inferSelect): LogRecord {
+  return {
+    id: String(row.id),
+    timestamp: row.timestamp.toISOString(),
+    level: row.level,
+    service: row.service,
+    message: row.message,
+    attributes: (row.attributes ?? {}) as LogRecord["attributes"],
+  };
+}
+
+queryRouter.get("/logs", async (req: Request, res: Response) => {
+  const query = req.query as Record<string, unknown>;
+
+  const filters = parseSharedFilters(query);
+  if ("error" in filters) {
+    res.status(400).json({ error: filters.error });
+    return;
+  }
+
+  const since = parseTimeParam(query.since, "since");
+  if (!since.ok) {
+    res.status(400).json({ error: since.error });
+    return;
+  }
+  const until = parseTimeParam(query.until, "until");
+  if (!until.ok) {
+    res.status(400).json({ error: until.error });
+    return;
+  }
+  if (
+    since.date &&
+    until.date &&
+    until.date.getTime() < since.date.getTime()
+  ) {
+    res.status(400).json({ error: "until must not be earlier than since" });
+    return;
+  }
+
+  const limitResult = parseLimitParam(query.limit);
+  if (!limitResult.ok) {
+    res.status(400).json({ error: limitResult.error });
+    return;
+  }
+  const { limit } = limitResult;
+
+  let cursor = null;
+  if (query.cursor !== undefined) {
+    if (typeof query.cursor !== "string") {
+      res.status(400).json({ error: "cursor must be a single string" });
+      return;
+    }
+    cursor = decodeCursor(query.cursor);
+    if (cursor === null) {
+      res.status(400).json({ error: "invalid or malformed cursor" });
+      return;
+    }
+  }
+
+  const conditions = [
+    buildFilterConditions(filters),
+    since.date ? gte(logs.timestamp, since.date) : undefined,
+    until.date ? lt(logs.timestamp, until.date) : undefined,
+    // Keyset pagination predicate: strictly older than the cursor's
+    // (timestamp, id), matching descending order on both columns. This
+    // correctly handles ties on `timestamp` by falling through to `id`,
+    // which is what makes the sort deterministic across pages.
+    cursor
+      ? or(
+          lt(logs.timestamp, new Date(cursor.timestamp)),
+          and(
+            eq(logs.timestamp, new Date(cursor.timestamp)),
+            lt(logs.id, cursor.id),
+          ),
+        )
+      : undefined,
+  ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // Fetch one extra row to determine whether a next page exists, without
+  // exposing that extra row to the client.
+  const rows = await db
+    .select()
+    .from(logs)
+    .where(whereClause)
+    .orderBy(desc(logs.timestamp), desc(logs.id))
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+
+  const nextCursor =
+    hasMore && page.length > 0
+      ? encodeCursor({
+          timestamp: page[page.length - 1].timestamp.toISOString(),
+          id: page[page.length - 1].id,
+        })
+      : null;
+
+  res.status(200).json({
+    logs: page.map(toLogRecord),
+    next_cursor: nextCursor,
+  });
 });
