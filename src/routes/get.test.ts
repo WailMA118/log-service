@@ -36,7 +36,9 @@ import { db } from "../db/client.js";
 
 const mockDb = db as { select: ReturnType<typeof vi.fn> };
 
-async function withServer<T>(callback: (baseUrl: string) => Promise<T>): Promise<T> {
+async function withServer<T>(
+  callback: (baseUrl: string) => Promise<T>,
+): Promise<T> {
   const app = createApp();
   const server = app.listen(0);
 
