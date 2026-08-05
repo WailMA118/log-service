@@ -13,29 +13,33 @@
  * decode or construct one -- they just pass back whatever `next_cursor`
  * we gave them.
  */
- 
+
 export type Cursor = {
   timestamp: string; // ISO string, matches the row's timestamp column
   id: number;
 };
- 
+
 export function encodeCursor(cursor: Cursor): string {
   const json = JSON.stringify(cursor);
   return Buffer.from(json, "utf-8").toString("base64url");
 }
- 
+
 export function decodeCursor(raw: string): Cursor | null {
   try {
     const json = Buffer.from(raw, "base64url").toString("utf-8");
     const parsed: unknown = JSON.parse(json);
- 
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
       return null;
     }
- 
+
     const candidate = parsed as Record<string, unknown>;
     const { timestamp, id } = candidate;
- 
+
     if (typeof timestamp !== "string" || typeof id !== "number") {
       return null;
     }
@@ -45,7 +49,7 @@ export function decodeCursor(raw: string): Cursor | null {
     if (!Number.isFinite(id) || !Number.isInteger(id)) {
       return null;
     }
- 
+
     return { timestamp, id };
   } catch {
     return null;

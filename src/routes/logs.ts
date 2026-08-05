@@ -144,11 +144,7 @@ queryRouter.get("/logs", async (req: Request, res: Response) => {
     res.status(400).json({ error: until.error });
     return;
   }
-  if (
-    since.date &&
-    until.date &&
-    until.date.getTime() < since.date.getTime()
-  ) {
+  if (since.date && until.date && until.date.getTime() < since.date.getTime()) {
     res.status(400).json({ error: "until must not be earlier than since" });
     return;
   }

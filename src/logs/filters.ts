@@ -29,7 +29,9 @@ export function parseSharedFilters(
   // "attr.__proto__" or "attr.constructor" can never be interpreted as
   // touching the object prototype chain -- it's just an inert own
   // property on an object with no prototype at all.
-  const result: ParsedFilters = { attrs: Object.create(null) as Record<string, string> };
+  const result: ParsedFilters = {
+    attrs: Object.create(null) as Record<string, string>,
+  };
 
   if (query.service !== undefined) {
     if (typeof query.service !== "string" || query.service.length === 0) {
@@ -107,8 +109,7 @@ function buildAttrCondition(key: string, value: string): SQL {
   }
 
   const branches = variants.map(
-    (v) =>
-      sql`${logs.attributes} @> ${JSON.stringify({ [key]: v })}::jsonb`,
+    (v) => sql`${logs.attributes} @> ${JSON.stringify({ [key]: v })}::jsonb`,
   );
 
   const combined = or(...branches);
