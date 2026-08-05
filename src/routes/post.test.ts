@@ -10,7 +10,9 @@ import { ingestClient } from "../db/client.js";
 
 const mockIngestClient = vi.mocked(ingestClient);
 
-async function withServer<T>(callback: (baseUrl: string) => Promise<T>): Promise<T> {
+async function withServer<T>(
+  callback: (baseUrl: string) => Promise<T>,
+): Promise<T> {
   const app = createApp();
   const server = app.listen(0);
 

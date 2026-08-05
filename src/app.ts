@@ -20,7 +20,6 @@ export function createApp(): Express {
   // the more specific route first defensively).
   app.use(ingestRouter);
 
-
   app.use((_req, res) => {
     res.status(404).json({ error: "not found" });
   });
@@ -29,20 +28,18 @@ export function createApp(): Express {
   // before any route handler runs. Per the API contract, POST /logs must
   // return 400 with { error: "..." } for malformed JSON -- without this
   // handler, Express's default error response doesn't match that shape.
-  app.use(
-    (err: unknown, _req: Request, res: Response, next: NextFunction) => {
-      if (
-        err instanceof SyntaxError &&
-        "status" in err &&
-        err.status === 400 &&
-        "body" in err
-      ) {
-        res.status(400).json({ error: "malformed JSON in request body" });
-        return;
-      }
-      next(err);
-    },
-  );
+  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    if (
+      err instanceof SyntaxError &&
+      "status" in err &&
+      err.status === 400 &&
+      "body" in err
+    ) {
+      res.status(400).json({ error: "malformed JSON in request body" });
+      return;
+    }
+    next(err);
+  });
 
   return app;
 }
