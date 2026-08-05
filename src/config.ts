@@ -45,13 +45,10 @@ try {
   // Ignore missing .env file in containerized environments.
 }
 
-function envOrThrow(key: string) {
+function envOrDefault(key: string, fallback: string): string {
   // eslint-disable-next-line security/detect-object-injection
   const value = process.env[key];
-  if (!value) {
-    throw new Error(`Environment variable ${key} is not set`);
-  }
-  return value;
+  return value ?? fallback;
 }
 
 function envIntOrDefault(key: string, fallback: number): number {
@@ -71,10 +68,10 @@ const migrationConfig: MigrationConfig = {
 
 export const config: Config = {
   api: {
-    port: Number(envOrThrow("PORT")),
+    port: envIntOrDefault("PORT", 3000),
   },
   db: {
-    url: envOrThrow("DB_URL"),
+    url: envOrDefault("DB_URL", "postgres://localhost:5432/logs"),
     migrationConfig: migrationConfig,
     queryPoolMax: envIntOrDefault("DB_QUERY_POOL_MAX", 6),
     ingestPoolMax: envIntOrDefault("DB_INGEST_POOL_MAX", 12),
