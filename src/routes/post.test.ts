@@ -2,13 +2,21 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../db/client.js", () => ({
-  ingestClient: vi.fn().mockResolvedValue(undefined),
+  db: {
+    insert: vi.fn(() => ({ values: vi.fn().mockResolvedValue(undefined) })),
+  },
 }));
 
 import { createApp } from "../app.js";
-import { ingestClient } from "../db/client.js";
+import { db } from "../db/client.js";
 
-const mockIngestClient = vi.mocked(ingestClient);
+const mockedDbInsert = vi.mocked(db.insert);
+const getMockedValues = () => {
+  const result = mockedDbInsert.mock.results[0];
+  return result?.type === "return" && result.value?.values
+    ? vi.mocked(result.value.values)
+    : vi.fn();
+};
 
 async function withServer<T>(
   callback: (baseUrl: string) => Promise<T>,
@@ -39,11 +47,11 @@ async function withServer<T>(
 
 describe("POST /logs", () => {
   beforeEach(() => {
-    mockIngestClient.mockClear();
+    mockedDbInsert.mockClear();
   });
 
   afterEach(() => {
-    mockIngestClient.mockClear();
+    mockedDbInsert.mockClear();
   });
 
   it("returns 400 when the request body does not contain a logs array", async () => {
@@ -59,7 +67,8 @@ describe("POST /logs", () => {
     expect(await response.json()).toEqual({
       error: "request body must be an object with a 'logs' array",
     });
-    expect(mockIngestClient).not.toHaveBeenCalled();
+    expect(mockedDbInsert).not.toHaveBeenCalled();
+    expect(getMockedValues()).not.toHaveBeenCalled();
   });
 
   it("returns 400 when no entries are accepted", async () => {
@@ -90,7 +99,8 @@ describe("POST /logs", () => {
         },
       ],
     });
-    expect(mockIngestClient).not.toHaveBeenCalled();
+    expect(mockedDbInsert).not.toHaveBeenCalled();
+    expect(getMockedValues()).not.toHaveBeenCalled();
   });
 
   it("accepts valid entries and returns the accepted count", async () => {
@@ -112,6 +122,7 @@ describe("POST /logs", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ accepted: 1, rejected: [] });
-    expect(mockIngestClient).toHaveBeenCalled();
+    expect(mockedDbInsert).toHaveBeenCalled();
+    expect(getMockedValues()).toHaveBeenCalled();
   });
 });
