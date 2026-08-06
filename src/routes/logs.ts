@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { and, desc, gte, lt, or, eq } from "drizzle-orm";
-import { ingestClient, db } from "../db/client.js";
+import { db } from "../db/client.js";
 import { logs } from "../db/schema.js";
 import { validateBatch } from "../logs/validation.js";
 import type { ValidatedLogEntry, LogRecord } from "../logs/types.js";
@@ -31,13 +31,9 @@ async function insertBatch(entries: ValidatedLogEntry[]): Promise<void> {
     level: e.level,
     service: e.service,
     message: e.message,
-    attributes: JSON.stringify(e.attributes),
+    attributes: e.attributes,
   }));
-
-  await ingestClient`
-    INSERT INTO logs (timestamp, level, service, message, attributes)
-    VALUES ${ingestClient(rows, "timestamp", "level", "service", "message", "attributes")}
-  `;
+  await db.insert(logs).values(rows);
 }
 
 ingestRouter.post("/logs", async (req: Request, res: Response) => {
