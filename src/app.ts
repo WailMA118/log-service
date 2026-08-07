@@ -6,6 +6,7 @@ import express, {
 } from "express";
 import { healthRouter } from "./routes/health.js";
 import { ingestRouter, queryRouter } from "./routes/logs.js";
+import { aggregateRouter } from "./routes/aggregate.js";
 
 export function createApp(): Express {
   const app = express();
@@ -13,6 +14,7 @@ export function createApp(): Express {
   app.use(healthRouter);
   // Register /logs/aggregate before /logs so the more specific route
   // wins in Express route matching.
+  app.use(aggregateRouter);
   app.use(ingestRouter);
   app.use(queryRouter);
 
