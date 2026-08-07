@@ -1,7 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { and, desc, gte, lt, or, eq } from "drizzle-orm";
-import { db } from "../db/client.js";
-import { logs } from "../db/schema.js";
+import { ingestClient, queryClient } from "../db/client.js";
 import { validateBatch } from "../logs/validation.js";
 import type { ValidatedLogEntry, LogRecord } from "../logs/types.js";
 import { DEFAULT_LIMIT, MAX_LIMIT } from "../logs/types.js";
@@ -15,25 +13,34 @@ export const queryRouter = Router();
 // POST /logs
 // ============================================================================
 
+// Postgres OIDs for explicit array parameter binding.
+const OID_TIMESTAMPTZ_ARRAY = 1185;
+const OID_TEXT_ARRAY = 1009;
+const OID_JSONB_ARRAY = 3807;
+
 /**
- * Bulk-inserts validated entries via a single multi-row INSERT using
- * postgres.js's helper(...) -- NOT one INSERT per row, and NOT through
- * Drizzle. At 15,000-25,000+ logs/sec, per-row round trips or ORM query
- * building overhead would dominate the request budget on a 0.5 CPU app
- * container. A single batched statement means one network round trip
- * and one planning pass for the whole batch.
+ * Insert validated entries with batch UNNEST arrays and explicit OIDs.
+ * This avoids per-row insert helpers and scalar type inference issues.
  */
 async function insertBatch(entries: ValidatedLogEntry[]): Promise<void> {
   if (entries.length === 0) return;
 
-  const rows = entries.map((e) => ({
-    timestamp: e.timestamp,
-    level: e.level,
-    service: e.service,
-    message: e.message,
-    attributes: e.attributes,
-  }));
-  await db.insert(logs).values(rows);
+  const timestamps = entries.map((e) => e.timestamp);
+  const levels = entries.map((e) => e.level);
+  const services = entries.map((e) => e.service);
+  const messages = entries.map((e) => e.message);
+  const attributes = entries.map((e) => JSON.stringify(e.attributes));
+
+  await ingestClient`
+    INSERT INTO logs (timestamp, level, service, message, attributes)
+    SELECT * FROM UNNEST(
+      ${ingestClient.array(timestamps, OID_TIMESTAMPTZ_ARRAY)},
+      ${ingestClient.array(levels, OID_TEXT_ARRAY)}::log_level[],
+      ${ingestClient.array(services, OID_TEXT_ARRAY)},
+      ${ingestClient.array(messages, OID_TEXT_ARRAY)},
+      ${ingestClient.array(attributes, OID_JSONB_ARRAY)}
+    )
+  `;
 }
 
 ingestRouter.post("/logs", async (req: Request, res: Response) => {
@@ -75,6 +82,15 @@ ingestRouter.post("/logs", async (req: Request, res: Response) => {
 // GET /logs
 // ============================================================================
 
+type LogRow = {
+  id: string;
+  timestamp: Date;
+  level: string;
+  service: string;
+  message: string;
+  attributes: Record<string, string | number | boolean> | null;
+};
+
 function parseTimeParam(
   value: unknown,
   paramName: string,
@@ -110,11 +126,11 @@ function parseLimitParam(
   return { ok: true, limit };
 }
 
-function toLogRecord(row: typeof logs.$inferSelect): LogRecord {
+function toLogRecord(row: LogRow): LogRecord {
   return {
-    id: String(row.id),
-    timestamp: row.timestamp.toISOString(),
-    level: row.level,
+    id: row.id,
+    timestamp: new Date(row.timestamp).toISOString(),
+    level: row.level as LogRecord["level"],
     service: row.service,
     message: row.message,
     attributes: (row.attributes ?? {}) as LogRecord["attributes"],
@@ -165,35 +181,40 @@ queryRouter.get("/logs", async (req: Request, res: Response) => {
     }
   }
 
-  const conditions = [
-    buildFilterConditions(filters),
-    since.date ? gte(logs.timestamp, since.date) : undefined,
-    until.date ? lt(logs.timestamp, until.date) : undefined,
-    // Keyset pagination predicate: strictly older than the cursor's
-    // (timestamp, id), matching descending order on both columns. This
-    // correctly handles ties on `timestamp` by falling through to `id`,
-    // which is what makes the sort deterministic across pages.
-    cursor
-      ? or(
-          lt(logs.timestamp, new Date(cursor.timestamp)),
-          and(
-            eq(logs.timestamp, new Date(cursor.timestamp)),
-            lt(logs.id, cursor.id),
-          ),
-        )
-      : undefined,
-  ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+  const sql = queryClient;
+  const conditions = [buildFilterConditions(sql, filters)];
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  if (since.date) conditions.push(sql`timestamp >= ${since.date}`);
+  if (until.date) conditions.push(sql`timestamp < ${until.date}`);
+
+  // Keyset pagination predicate: strictly older than the cursor's
+  // (timestamp, id), matching descending order on both columns. This
+  // correctly handles ties on `timestamp` by falling through to `id`,
+  // which is what makes the sort deterministic across pages.
+  if (cursor) {
+    const cursorTimestamp = new Date(cursor.timestamp);
+    conditions.push(
+      sql`(timestamp < ${cursorTimestamp} OR (timestamp = ${cursorTimestamp} AND id < ${cursor.id}))`,
+    );
+  }
+
+  const nonNullConditions = conditions.filter(
+    (c): c is NonNullable<typeof c> => c !== null,
+  );
+  const whereClause =
+    nonNullConditions.length > 0
+      ? sql`WHERE ${nonNullConditions.reduce((acc, cond) => sql`${acc} AND ${cond}`)}`
+      : sql``;
 
   // Fetch one extra row to determine whether a next page exists, without
   // exposing that extra row to the client.
-  const rows = await db
-    .select()
-    .from(logs)
-    .where(whereClause)
-    .orderBy(desc(logs.timestamp), desc(logs.id))
-    .limit(limit + 1);
+  const rows = await sql<LogRow[]>`
+    SELECT id, timestamp, level, service, message, attributes
+    FROM logs
+    ${whereClause}
+    ORDER BY timestamp DESC, id DESC
+    LIMIT ${limit + 1}
+  `;
 
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
@@ -201,8 +222,8 @@ queryRouter.get("/logs", async (req: Request, res: Response) => {
   const nextCursor =
     hasMore && page.length > 0
       ? encodeCursor({
-          timestamp: page[page.length - 1].timestamp.toISOString(),
-          id: page[page.length - 1].id,
+          timestamp: new Date(page[page.length - 1].timestamp).toISOString(),
+          id: Number(page[page.length - 1].id),
         })
       : null;
 

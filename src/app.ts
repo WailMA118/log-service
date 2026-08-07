@@ -11,13 +11,8 @@ export function createApp(): Express {
   const app = express();
   app.use(express.json());
   app.use(healthRouter);
-  // aggregateRouter is registered before queryRouter so
-  // GET /logs/aggregate is matched before the GET /logs handler --
-  // Express matches routes in registration order, and /logs/aggregate
-  // would otherwise never be reachable if a broader /logs pattern were
-  // registered first (it currently isn't, since queryRouter's path is
-  // the literal "/logs", not a prefix match, but this ordering keeps
-  // the more specific route first defensively).
+  // Register /logs/aggregate before /logs so the more specific route
+  // wins in Express route matching.
   app.use(ingestRouter);
   app.use(queryRouter);
 
@@ -25,10 +20,7 @@ export function createApp(): Express {
     res.status(404).json({ error: "not found" });
   });
 
-  // Malformed JSON bodies are thrown by express.json() as a SyntaxError
-  // before any route handler runs. Per the API contract, POST /logs must
-  // return 400 with { error: "..." } for malformed JSON -- without this
-  // handler, Express's default error response doesn't match that shape.
+  // Catch malformed JSON and return a consistent 400 error body.
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (
       err instanceof SyntaxError &&

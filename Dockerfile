@@ -6,6 +6,7 @@ RUN npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
+COPY scripts ./scripts
 COPY drizzle.config.ts ./
 RUN npm run build
 
@@ -17,9 +18,12 @@ ENV PORT=8080
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
+# dist/ is self-contained after the build step (scripts/copy-migrations.mjs
+# copies the .sql migration files and journal metadata into dist/db/migrations,
+# since tsc only compiles .ts files and silently skips everything else).
+# src/ is intentionally NOT copied into the runner stage -- it was only
+# ever needed at build time.
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 
 EXPOSE 8080
 USER node

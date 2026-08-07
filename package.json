@@ -5,9 +5,9 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "build": "npx tsc",
+    "build": "npx tsc && node scripts/copy-migrations.mjs",
     "start": "node dist/index.js",
-    "dev": "npx tsc && node dist/index.js",
+    "dev": "npm run build && node dist/index.js",
     "test": "vitest --run",
     "format:write": "prettier --write \"src/**/*.{js,ts,json,css,md}\"",
     "format:check": "prettier --check \"src/**/*.{js,ts,json,css,md}\"",
@@ -21,7 +21,6 @@
     "@types/eslint-plugin-security": "^3.0.1",
     "@types/express": "^5.0.1",
     "@types/node": "^22.14.0",
-    "drizzle-kit": "^0.31.10",
     "eslint": "^10.8.0",
     "eslint-plugin-security": "^4.0.1",
     "globals": "^17.8.0",
@@ -31,7 +30,6 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
     "postgres": "^3.4.9"
   }
