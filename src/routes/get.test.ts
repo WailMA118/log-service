@@ -12,29 +12,16 @@ const mockRows = [
   },
 ];
 
-vi.mock("../db/client.js", () => {
-  const mockDb = {
-    select: vi.fn(() => ({
-      from: () => ({
-        where: () => ({
-          orderBy: () => ({
-            limit: async () => mockRows,
-          }),
-        }),
-      }),
-    })),
-  };
+const { mockQueryClient } = vi.hoisted(() => ({
+  mockQueryClient: vi.fn(),
+}));
 
-  return {
-    ingestClient: vi.fn(),
-    db: mockDb,
-  };
-});
+vi.mock("../db/client.js", () => ({
+  ingestClient: vi.fn(),
+  queryClient: mockQueryClient,
+}));
 
 import { createApp } from "../app.js";
-import { db } from "../db/client.js";
-
-const mockDb = db as { select: ReturnType<typeof vi.fn> };
 
 async function withServer<T>(
   callback: (baseUrl: string) => Promise<T>,
@@ -65,7 +52,8 @@ async function withServer<T>(
 
 describe("GET /logs", () => {
   beforeEach(() => {
-    mockDb.select.mockClear();
+    mockQueryClient.mockReset();
+    mockQueryClient.mockImplementation(async () => mockRows);
   });
 
   it("returns a page of logs", async () => {
@@ -75,7 +63,7 @@ describe("GET /logs", () => {
     expect(await response.json()).toEqual({
       logs: [
         {
-          id: "1",
+          id: 1,
           timestamp: "2026-08-05T12:00:00.000Z",
           level: "info",
           service: "api",
@@ -85,7 +73,7 @@ describe("GET /logs", () => {
       ],
       next_cursor: null,
     });
-    expect(mockDb.select).toHaveBeenCalled();
+    expect(mockQueryClient).toHaveBeenCalled();
   });
 
   it("returns 400 for invalid limit values", async () => {
@@ -97,6 +85,6 @@ describe("GET /logs", () => {
     expect(await response.json()).toEqual({
       error: "limit must be a non-negative integer",
     });
-    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(mockQueryClient).not.toHaveBeenCalled();
   });
 });

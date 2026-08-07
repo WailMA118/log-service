@@ -1,22 +1,16 @@
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockIngestClient } = vi.hoisted(() => ({
+  mockIngestClient: Object.assign(vi.fn(), { array: vi.fn() }),
+}));
+
 vi.mock("../db/client.js", () => ({
-  db: {
-    insert: vi.fn(() => ({ values: vi.fn().mockResolvedValue(undefined) })),
-  },
+  ingestClient: mockIngestClient,
+  queryClient: vi.fn(),
 }));
 
 import { createApp } from "../app.js";
-import { db } from "../db/client.js";
-
-const mockedDbInsert = vi.mocked(db.insert);
-const getMockedValues = () => {
-  const result = mockedDbInsert.mock.results[0];
-  return result?.type === "return" && result.value?.values
-    ? vi.mocked(result.value.values)
-    : vi.fn();
-};
 
 async function withServer<T>(
   callback: (baseUrl: string) => Promise<T>,
@@ -47,11 +41,21 @@ async function withServer<T>(
 
 describe("POST /logs", () => {
   beforeEach(() => {
-    mockedDbInsert.mockClear();
+    mockIngestClient.mockReset();
+    mockIngestClient.array.mockReset();
+    mockIngestClient.mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      async (_strings: TemplateStringsArray, ..._values: unknown[]) =>
+        undefined,
+    );
+    mockIngestClient.array.mockImplementation((values: unknown[]) => ({
+      values,
+    }));
   });
 
   afterEach(() => {
-    mockedDbInsert.mockClear();
+    mockIngestClient.mockReset();
+    mockIngestClient.array.mockReset();
   });
 
   it("returns 400 when the request body does not contain a logs array", async () => {
@@ -67,8 +71,8 @@ describe("POST /logs", () => {
     expect(await response.json()).toEqual({
       error: "request body must be an object with a 'logs' array",
     });
-    expect(mockedDbInsert).not.toHaveBeenCalled();
-    expect(getMockedValues()).not.toHaveBeenCalled();
+    expect(mockIngestClient).not.toHaveBeenCalled();
+    expect(mockIngestClient.array).not.toHaveBeenCalled();
   });
 
   it("returns 400 when no entries are accepted", async () => {
@@ -99,8 +103,8 @@ describe("POST /logs", () => {
         },
       ],
     });
-    expect(mockedDbInsert).not.toHaveBeenCalled();
-    expect(getMockedValues()).not.toHaveBeenCalled();
+    expect(mockIngestClient).not.toHaveBeenCalled();
+    expect(mockIngestClient.array).not.toHaveBeenCalled();
   });
 
   it("accepts valid entries and returns the accepted count", async () => {
@@ -122,7 +126,7 @@ describe("POST /logs", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ accepted: 1, rejected: [] });
-    expect(mockedDbInsert).toHaveBeenCalled();
-    expect(getMockedValues()).toHaveBeenCalled();
+    expect(mockIngestClient).toHaveBeenCalled();
+    expect(mockIngestClient.array).toHaveBeenCalled();
   });
 });

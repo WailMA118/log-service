@@ -1,6 +1,5 @@
-import { sql, and, or, type SQL } from "drizzle-orm";
+import type postgres from "postgres";
 import { isLogLevel } from "./types.js";
-import { logs } from "../db/schema.js";
 
 export type ParsedFilters = {
   service?: string;
@@ -27,8 +26,7 @@ export function parseSharedFilters(
 ): ParsedFilters | FilterParseError {
   // attrs uses a null-prototype object so a query param like
   // "attr.__proto__" or "attr.constructor" can never be interpreted as
-  // touching the object prototype chain -- it's just an inert own
-  // property on an object with no prototype at all.
+  // touching the object prototype chain.
   const result: ParsedFilters = {
     attrs: Object.create(null) as Record<string, string>,
   };
@@ -83,16 +81,20 @@ export function parseSharedFilters(
  * containment is type-strict.
  *
  * To honor "compared as strings" while still using the jsonb_path_ops
- * GIN index (rather than falling back to a full scan with a cast), we
- * OR together containment checks against the value's string form and,
- * where syntactically valid, its number/boolean form. Each branch alone
- * is index-eligible; Postgres can use a BitmapOr across them.
+ * GIN index (rather than a full scan with a cast), we OR together
+ * containment checks against the value's string form and, where
+ * syntactically valid, its number/boolean form. Each branch alone is
+ * index-eligible; Postgres can use a BitmapOr across them.
  *
- * All values are passed as Drizzle SQL bind parameters (never
+ * All values are passed as postgres.js bind parameters (never
  * string-concatenated), so this is immune to SQL injection regardless of
  * what the client sends as a filter value.
  */
-function buildAttrCondition(key: string, value: string): SQL {
+function buildAttrCondition(
+  sql: postgres.Sql,
+  key: string,
+  value: string,
+): postgres.Fragment {
   const variants: (string | number | boolean)[] = [value];
 
   if (value === "true" || value === "false") {
@@ -109,38 +111,37 @@ function buildAttrCondition(key: string, value: string): SQL {
   }
 
   const branches = variants.map(
-    (v) => sql`${logs.attributes} @> ${JSON.stringify({ [key]: v })}::jsonb`,
+    (v) => sql`attributes @> ${JSON.stringify({ [key]: v })}::jsonb`,
   );
 
-  const combined = or(...branches);
-  if (!combined) {
-    throw new Error("unreachable: buildAttrCondition always has >=1 variant");
-  }
-  return combined;
+  return branches.reduce((acc, branch) => sql`(${acc} OR ${branch})`);
 }
 
 /**
- * Builds the combined WHERE condition (as a Drizzle SQL fragment) for
- * the shared filters. Returns undefined when there are no filters, so
- * callers can pass it straight into Drizzle's `.where()` -- Drizzle
- * treats an undefined where-clause as "no filter" naturally.
+ * Builds the combined WHERE condition (as a postgres.js Fragment) for
+ * the shared filters. Returns null when there are no filters, so
+ * callers can decide whether to prefix with WHERE or AND.
  */
-export function buildFilterConditions(filters: ParsedFilters): SQL | undefined {
-  const conditions: SQL[] = [];
+export function buildFilterConditions(
+  sql: postgres.Sql,
+  filters: ParsedFilters,
+): postgres.Fragment | null {
+  const conditions: postgres.Fragment[] = [];
 
   if (filters.service !== undefined) {
-    conditions.push(sql`${logs.service} = ${filters.service}`);
+    conditions.push(sql`service = ${filters.service}`);
   }
   if (filters.level !== undefined) {
-    conditions.push(sql`${logs.level} = ${filters.level}`);
+    conditions.push(sql`level = ${filters.level}`);
   }
   if (filters.q !== undefined) {
-    conditions.push(sql`${logs.message} ILIKE ${"%" + filters.q + "%"}`);
+    conditions.push(sql`message ILIKE ${"%" + filters.q + "%"}`);
   }
   for (const [key, value] of Object.entries(filters.attrs)) {
-    conditions.push(buildAttrCondition(key, value));
+    conditions.push(buildAttrCondition(sql, key, value));
   }
 
-  if (conditions.length === 0) return undefined;
-  return and(...conditions);
+  if (conditions.length === 0) return null;
+
+  return conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`);
 }
