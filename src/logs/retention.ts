@@ -1,11 +1,11 @@
 import postgres from "postgres";
 import { config } from "../config.js";
- 
+
 const DB_URL = config.db.url;
 if (!DB_URL) {
   throw new Error("DATABASE_URL environment variable is required");
 }
- 
+
 /**
  * How many days beyond "today" to always keep pre-created. Sized well
  * beyond both the 5-minute future-timestamp validation window (POST
@@ -17,7 +17,7 @@ if (!DB_URL) {
  * that row.
  */
 const FUTURE_PARTITION_DAYS = 3;
- 
+
 /**
  * Builds the retention sweep SQL with the two integer knobs inlined
  * directly into the DO block text, rather than passed as bind
@@ -42,14 +42,17 @@ function assertNonNegativeInt(value: number, label: string): number {
   }
   return value;
 }
- 
+
 function buildRetentionSweepSql(
   retentionDays: number,
   futurePartitionDays: number,
 ): string {
   const days = assertNonNegativeInt(retentionDays, "retentionDays");
-  const future = assertNonNegativeInt(futurePartitionDays, "futurePartitionDays");
- 
+  const future = assertNonNegativeInt(
+    futurePartitionDays,
+    "futurePartitionDays",
+  );
+
   return `
 DO $$
 DECLARE
@@ -93,7 +96,7 @@ BEGIN
 END $$;
 `;
 }
- 
+
 /**
  * Runs one retention sweep on a short-lived, dedicated single connection
  * -- separate from both the query pool and the ingest pool, so this
@@ -134,9 +137,9 @@ export async function runRetentionSweep(): Promise<void> {
     await sql.end();
   }
 }
- 
+
 let timer: NodeJS.Timeout | null = null;
- 
+
 /**
  * Runs an initial sweep immediately (so a freshly started service isn't
  * relying on the migration's one-time 7-day partition seed forever),
@@ -146,18 +149,18 @@ export function startRetentionScheduler(): void {
   runRetentionSweep().catch((err) => {
     console.error("[retention] initial sweep failed:", err);
   });
- 
+
   timer = setInterval(() => {
     runRetentionSweep().catch((err) => {
       console.error("[retention] scheduled sweep failed:", err);
     });
   }, config.retention.sweepIntervalMs);
- 
+
   // Don't let the periodic timer alone keep the process alive; shutdown
   // is driven explicitly by the SIGTERM/SIGINT handlers in index.ts.
   timer.unref();
 }
- 
+
 export function stopRetentionScheduler(): void {
   if (timer) {
     clearInterval(timer);

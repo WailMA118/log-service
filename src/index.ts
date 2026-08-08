@@ -3,7 +3,10 @@ import { waitForDatabase, closeDatabase } from "./db/client.js";
 import { runMigrations } from "./db/migrate.js";
 import { setDbConnected, setMigrationsApplied } from "./state/readiness.js";
 import { config } from "./config.js";
-import { startRetentionScheduler, stopRetentionScheduler } from "./logs/retention.js";
+import {
+  startRetentionScheduler,
+  stopRetentionScheduler,
+} from "./logs/retention.js";
 
 const PORT = Number(config.api.port);
 
@@ -18,7 +21,7 @@ async function bootstrap(): Promise<void> {
 
   startRetentionScheduler();
   console.log("[bootstrap] retention scheduler started");
-  
+
   const app = createApp();
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`[bootstrap] listening on port ${PORT}`);
