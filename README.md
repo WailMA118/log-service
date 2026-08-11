@@ -271,4 +271,4 @@ All configuration is via environment variables (see `.env.example`), parsed in `
 | `RETENTION_DAYS` | `30` | How many days of data to retain before a partition is dropped |
 | `RETENTION_SWEEP_INTERVAL_MS` | `3600000` (1 hour) | How often the retention sweep runs |
 
-> **Note:** `docker-compose.yml` currently only forwards `PORT`, `DB_URL`, and the `POSTGRES_*` variables into the `app` container's environment. To override `DB_QUERY_POOL_MAX`, `DB_INGEST_POOL_MAX`, `RETENTION_DAYS`, or `RETENTION_SWEEP_INTERVAL_MS` when running via `docker compose up`, add them to the `app.environment` block in `docker-compose.yml` as well as setting them in `.env` — setting them in `.env` alone is not sufficient, since Compose does not automatically forward every host/`.env` variable into a container's environment.
+> All six variables above are forwarded from `.env` into the `app` container via `docker-compose.yml`'s `environment` block, using `${VAR:-default}` so each one falls back to the same default `config.ts` would use if left unset — overriding any of them only requires setting it in `.env` before `docker compose up`.
