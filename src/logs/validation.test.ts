@@ -335,10 +335,7 @@ describe("validateBatch", () => {
   });
 
   it("does not let one invalid entry affect validation of the others", () => {
-    const result = validateBatch([
-      { totally: "malformed" },
-      VALID_ENTRY,
-    ]);
+    const result = validateBatch([{ totally: "malformed" }, VALID_ENTRY]);
 
     expect(result.rejected).toEqual([
       { index: 0, reason: "timestamp is required" },

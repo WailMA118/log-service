@@ -149,9 +149,7 @@ describe("parseSharedFilters", () => {
       if ("error" in result) return;
       expect(result.attrs.__proto__).toBe("polluted");
       // The real Object.prototype must be completely unaffected.
-      expect(Object.prototype.hasOwnProperty.call({}, "polluted")).toBe(
-        false,
-      );
+      expect(Object.prototype.hasOwnProperty.call({}, "polluted")).toBe(false);
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     });
 
