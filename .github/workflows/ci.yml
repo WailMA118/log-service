@@ -27,5 +27,75 @@ jobs:
       - name: Check linting
         run: npm run lint -- --max-warnings=0
 
+      - name: Type check
+        run: npx tsc --noEmit
+
       - name: Run tests
         run: npm run test
+
+  docker-e2e:
+    name: Docker Compose end-to-end
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Build and start the full stack
+        run: docker compose up -d --build
+
+      - name: Wait for /health to report ready
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/health; then
+              echo "service is healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "service never became healthy within the timeout"
+          exit 1
+
+      - name: Smoke test the API contract end-to-end
+        run: |
+          set -e
+
+          echo "POST /logs -- ingest one entry"
+          post_response=$(curl -sf -X POST http://localhost:8080/logs \
+            -H "Content-Type: application/json" \
+            -d '{
+              "logs": [
+                {
+                  "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"'",
+                  "level": "error",
+                  "service": "ci-smoke-test",
+                  "message": "smoke test payment declined",
+                  "attributes": {"user_id": "42", "retries": 3}
+                }
+              ]
+            }')
+          echo "$post_response"
+          echo "$post_response" | grep -q '"accepted":1'
+
+          echo "waiting for the row to become queryable"
+          sleep 2
+
+          echo "GET /logs -- filter back the ingested entry"
+          get_response=$(curl -sf "http://localhost:8080/logs?service=ci-smoke-test")
+          echo "$get_response"
+          echo "$get_response" | grep -q "smoke test payment declined"
+
+          echo "GET /logs/aggregate -- exercise the aggregation query path"
+          since=$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%S.000Z)
+          until=$(date -u -d '1 hour' +%Y-%m-%dT%H:%M:%S.000Z)
+          agg_response=$(curl -sf "http://localhost:8080/logs/aggregate?service=ci-smoke-test&bucket=1h&since=${since}&until=${until}")
+          echo "$agg_response"
+          echo "$agg_response" | grep -q '"buckets"'
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

@@ -117,6 +117,22 @@ aggregateRouter.get("/logs/aggregate", async (req: Request, res: Response) => {
   // aligned to an origin point -- using `since` as the origin means
   // bucket boundaries always start exactly at the query's requested
   // start time.
+  //
+  // The bucket expression and group column are each computed ONCE in an
+  // inner subquery and referenced by column name (bucket_start,
+  // group_value) in the outer GROUP BY/ORDER BY -- NOT by re-embedding
+  // the same sql`` fragment multiple times in one query. Re-embedding a
+  // fragment re-numbers its bind parameters at each occurrence (e.g.
+  // $1/$2 in SELECT, $3/$4 in GROUP BY, $5/$6 in ORDER BY, even though
+  // the values are identical), and Postgres's GROUP BY validity check
+  // treats differently-numbered placeholders as structurally different
+  // expressions -- it doesn't know $3 will hold the same value as $1 at
+  // plan-analysis time. This produced a real
+  // `column "logs.timestamp" must appear in the GROUP BY clause` error,
+  // confirmed against a live Postgres instance. Grouping by an actual
+  // output column of a FROM-subquery sidesteps the issue entirely: by
+  // the time the outer query's GROUP BY runs, bucket_start/group_value
+  // are just plain columns, not expressions needing re-derivation.
   const bucketExpr = sql`date_bin(${interval}::interval, timestamp, ${since.date}::timestamptz)`;
 
   const groupColumnSql =
@@ -127,14 +143,16 @@ aggregateRouter.get("/logs/aggregate", async (req: Request, res: Response) => {
         : sql`NULL`;
 
   const rows = await sql<AggregateRow[]>`
-    SELECT
-      ${bucketExpr} AS bucket_start,
-      ${groupColumnSql} AS group_value,
-      count(*) AS count
-    FROM logs
-    WHERE ${whereClause}
-    GROUP BY ${bucketExpr}, ${groupColumnSql}
-    ORDER BY ${bucketExpr}
+    SELECT bucket_start, group_value, count(*) AS count
+    FROM (
+      SELECT
+        ${bucketExpr} AS bucket_start,
+        ${groupColumnSql} AS group_value
+      FROM logs
+      WHERE ${whereClause}
+    ) bucketed
+    GROUP BY bucket_start, group_value
+    ORDER BY bucket_start
   `;
 
   const buckets = rows.map((row) => ({
