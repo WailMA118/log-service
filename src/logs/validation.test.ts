@@ -25,6 +25,7 @@ describe("validateLogEntry", () => {
   });
 
   it("defaults attributes to {} when omitted", () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { attributes: _omit, ...withoutAttributes } = VALID_ENTRY;
     const result = validateLogEntry(withoutAttributes);
 
@@ -47,6 +48,7 @@ describe("validateLogEntry", () => {
 
   describe("timestamp", () => {
     it("rejects a missing timestamp", () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { timestamp: _omit, ...rest } = VALID_ENTRY;
       const result = validateLogEntry(rest);
 
@@ -121,6 +123,7 @@ describe("validateLogEntry", () => {
 
   describe("level", () => {
     it("rejects a missing level", () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { level: _omit, ...rest } = VALID_ENTRY;
       const result = validateLogEntry(rest);
 
@@ -156,6 +159,7 @@ describe("validateLogEntry", () => {
 
   describe("service", () => {
     it("rejects a missing service", () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { service: _omit, ...rest } = VALID_ENTRY;
       const result = validateLogEntry(rest);
 
@@ -199,6 +203,7 @@ describe("validateLogEntry", () => {
 
   describe("message", () => {
     it("rejects a missing message", () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { message: _omit, ...rest } = VALID_ENTRY;
       const result = validateLogEntry(rest);
 
