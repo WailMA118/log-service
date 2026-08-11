@@ -21,6 +21,18 @@ const OID_JSONB_ARRAY = 3807;
 /**
  * Insert validated entries with batch UNNEST arrays and explicit OIDs.
  * This avoids per-row insert helpers and scalar type inference issues.
+ *
+ * IMPORTANT: `attributes` is passed as the raw array of JS objects, NOT
+ * pre-serialized with JSON.stringify(). postgres.js already serializes
+ * values to JSON text itself when the declared parameter oid is a
+ * json/jsonb (array) type -- confirmed by testing directly against a
+ * live Postgres instance. Pre-stringifying here double-encodes: the
+ * column ends up holding a jsonb *string* whose content is our already-
+ * serialized JSON text (e.g. `"{\"user_id\":\"42\"}"` as a jsonb scalar
+ * string), rather than the jsonb *object* the rest of the app expects
+ * (e.g. GET /logs's response, and the GIN containment queries in
+ * filters.ts, both assume `attributes` is a jsonb object, not a jsonb
+ * string wrapping JSON text).
  */
 async function insertBatch(entries: ValidatedLogEntry[]): Promise<void> {
   if (entries.length === 0) return;
@@ -29,7 +41,13 @@ async function insertBatch(entries: ValidatedLogEntry[]): Promise<void> {
   const levels = entries.map((e) => e.level);
   const services = entries.map((e) => e.service);
   const messages = entries.map((e) => e.message);
-  const attributes = entries.map((e) => JSON.stringify(e.attributes));
+  // postgres.js's TypeScript definitions for sql.array() don't model
+  // "array of plain JSON-serializable objects, to be bound as jsonb[]"
+  // as a valid SerializableParameter shape, even though this is
+  // correct and necessary at runtime (see the comment above) -- the
+  // cast below is narrow and specifically justified by that gap, not a
+  // blanket type-safety opt-out.
+  const attributes = entries.map((e) => e.attributes) as unknown as string[];
 
   await ingestClient`
     INSERT INTO logs (timestamp, level, service, message, attributes)
