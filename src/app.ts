@@ -10,7 +10,7 @@ import { aggregateRouter } from "./routes/aggregate.js";
 
 export function createApp(): Express {
   const app = express();
-  app.use(express.json({limit: "10mb"}));
+  app.use(express.json({ limit: "10mb" }));
   app.use(healthRouter);
   // Register /logs/aggregate before /logs so the more specific route
   // wins in Express route matching.
