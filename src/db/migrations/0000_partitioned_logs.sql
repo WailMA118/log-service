@@ -55,6 +55,12 @@ CREATE INDEX "logs_service_level_timestamp_idx"
 CREATE INDEX "logs_timestamp_id_idx"
 	ON "logs" ("timestamp" DESC, "id" DESC);--> statement-breakpoint
 
+-- Time-bounded queries that also filter on service + level can take
+-- advantage of the ordered timestamp leading column without scanning the
+-- entire partition set.
+CREATE INDEX "logs_timestamp_service_level_idx"
+	ON "logs" ("timestamp", "service", "level");--> statement-breakpoint
+
 -- attr.<key> equality lookups against the JSONB attributes column.
 -- jsonb_path_ops is smaller and faster than the default jsonb_ops for
 -- containment (@>) queries, at the cost of not supporting key-existence
