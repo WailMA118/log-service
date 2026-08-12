@@ -10,7 +10,7 @@ import { aggregateRouter } from "./routes/aggregate.js";
 
 export function createApp(): Express {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: "10mb" }));
   app.use(healthRouter);
   // Register /logs/aggregate before /logs so the more specific route
   // wins in Express route matching.
@@ -22,7 +22,7 @@ export function createApp(): Express {
     res.status(404).json({ error: "not found" });
   });
 
-  // Catch malformed JSON and return a consistent 400 error body.
+  // Catch malformed JSON and oversized payloads and return consistent error bodies.
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (
       err instanceof SyntaxError &&
@@ -33,6 +33,17 @@ export function createApp(): Express {
       res.status(400).json({ error: "malformed JSON in request body" });
       return;
     }
+
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "type" in err &&
+      (err as { type?: string }).type === "entity.too.large"
+    ) {
+      res.status(413).json({ error: "request body exceeds size limit" });
+      return;
+    }
+
     next(err);
   });
 
