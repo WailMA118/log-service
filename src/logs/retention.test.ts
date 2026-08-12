@@ -23,59 +23,79 @@ describe("runRetentionSweep", () => {
     mockSql.unsafe.mockResolvedValue(undefined);
   });
 
-  it("opens a dedicated single connection separate from the app pools", async () => {
-    await runRetentionSweep();
+  describe("connection lifecycle", () => {
+    it("opens a dedicated single connection, separate from the app pools", async () => {
+      await runRetentionSweep();
 
-    expect(mockPostgres).toHaveBeenCalledTimes(1);
-    expect(mockPostgres).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ max: 1 }),
-    );
+      expect(mockPostgres).toHaveBeenCalledTimes(1);
+      expect(mockPostgres).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ max: 1 }),
+      );
+    });
+
+    it("closes the connection after a successful sweep", async () => {
+      await runRetentionSweep();
+
+      expect(mockSql.end).toHaveBeenCalledTimes(1);
+    });
+
+    it("closes the connection even when the sweep query fails, and still surfaces the error", async () => {
+      mockSql.unsafe.mockRejectedValueOnce(new Error("boom"));
+
+      await expect(runRetentionSweep()).rejects.toThrow("boom");
+
+      expect(mockSql.end).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it("always closes the connection, including when the sweep query fails", async () => {
-    mockSql.unsafe.mockRejectedValueOnce(new Error("boom"));
+  describe("generated SQL (regression coverage)", () => {
+    it("inlines the configured retention window as a plain integer, not a bind parameter", async () => {
+      // Regression guard: DO $$ ... $$ blocks are anonymous PL/pgSQL
+      // blocks, not prepared statements -- Postgres does not support
+      // external bind parameters ($1/$2) inside them at all. This was
+      // caught by testing against a live Postgres instance (it fails
+      // with "could not determine data type of parameter $1"), not by
+      // inspection. The fix inlines the two integer config values
+      // directly into the generated SQL text instead.
+      await runRetentionSweep();
 
-    await expect(runRetentionSweep()).rejects.toThrow("boom");
+      const sqlText = mockSql.unsafe.mock.calls[0][0] as string;
+      // Default RETENTION_DAYS is 30 (see config.ts fallback).
+      expect(sqlText).toContain("CURRENT_DATE - 30");
+      expect(sqlText).not.toMatch(/\$1|\$2/);
+    });
 
-    expect(mockSql.end).toHaveBeenCalledTimes(1);
-  });
+    it("rolls the partition window forward by the future-partition buffer", async () => {
+      await runRetentionSweep();
 
-  it("closes the connection after a successful sweep", async () => {
-    await runRetentionSweep();
+      const sqlText = mockSql.unsafe.mock.calls[0][0] as string;
+      expect(sqlText).toContain("FOR day_offset IN 0..3 LOOP");
+    });
 
-    expect(mockSql.end).toHaveBeenCalledTimes(1);
-  });
+    it("only ever targets dated partitions, never logs_default", async () => {
+      await runRetentionSweep();
 
-  it("inlines the configured retention window as a plain integer cutoff", async () => {
-    await runRetentionSweep();
+      const sqlText = mockSql.unsafe.mock.calls[0][0] as string;
+      expect(sqlText).toContain("^logs_[0-9]{4}_[0-9]{2}_[0-9]{2}$");
+      expect(sqlText).not.toContain("logs_default");
+    });
 
-    const sqlText = mockSql.unsafe.mock.calls[0][0] as string;
-    // Default RETENTION_DAYS is 30 (see config.ts fallback).
-    expect(sqlText).toContain("CURRENT_DATE - 30");
-  });
+    it("uses format() with %I/%L for both create and drop, never string-concatenates identifiers", async () => {
+      await runRetentionSweep();
 
-  it("rolls the partition window forward by the future-partition buffer", async () => {
-    await runRetentionSweep();
+      const sqlText = mockSql.unsafe.mock.calls[0][0] as string;
+      expect(sqlText).toContain("format(");
+      expect(sqlText).toContain("%I");
+      expect(sqlText).toContain("%L");
+    });
 
-    const sqlText = mockSql.unsafe.mock.calls[0][0] as string;
-    expect(sqlText).toContain("FOR day_offset IN 0..3 LOOP");
-  });
+    it("does both the roll-forward and the drop within a single DO block (one round trip)", async () => {
+      await runRetentionSweep();
 
-  it("only ever targets dated partitions, never logs_default", async () => {
-    await runRetentionSweep();
-
-    const sqlText = mockSql.unsafe.mock.calls[0][0] as string;
-    expect(sqlText).toContain("^logs_[0-9]{4}_[0-9]{2}_[0-9]{2}$");
-    expect(sqlText).not.toContain("logs_default");
-  });
-
-  it("uses format() with %I/%L for both create and drop, never string-concatenates identifiers", async () => {
-    await runRetentionSweep();
-
-    const sqlText = mockSql.unsafe.mock.calls[0][0] as string;
-    expect(sqlText).toContain("format(");
-    expect(sqlText).toContain("%I");
-    expect(sqlText).toContain("%L");
+      expect(mockSql.unsafe).toHaveBeenCalledTimes(1);
+      const sqlText = mockSql.unsafe.mock.calls[0][0] as string;
+      expect(sqlText.trim().startsWith("DO $$")).toBe(true);
+    });
   });
 });
