@@ -49,7 +49,7 @@ export const config: Config = {
   db: {
     url: envOrDefault("DB_URL", "postgres://localhost:5432/logs"),
     queryPoolMax: envIntOrDefault("DB_QUERY_POOL_MAX", 6),
-    ingestPoolMax: envIntOrDefault("DB_INGEST_POOL_MAX", 12),
+    ingestPoolMax: envIntOrDefault("DB_INGEST_POOL_MAX", 4),
   },
   retention: {
     retentionDays: envIntOrDefault("RETENTION_DAYS", 30),
