@@ -49,7 +49,18 @@ export const config: Config = {
   db: {
     url: envOrDefault("DB_URL", "postgres://localhost:5432/logs"),
     queryPoolMax: envIntOrDefault("DB_QUERY_POOL_MAX", 6),
-    ingestPoolMax: envIntOrDefault("DB_INGEST_POOL_MAX", 4),
+    // Load-test evidence (see project notes) is genuinely mixed: sustained
+    // high-throughput scenarios showed Postgres CPU pegged near 100%,
+    // arguing for LESS ingest concurrency to reduce contention on its
+    // single CPU -- but a stress-ramp scenario showed the opposite
+    // signature (Postgres CPU low, ~17%, while HTTP error rate spiked to
+    // 26% and throughput collapsed), which only makes sense if the app's
+    // OWN connection pool was the bottleneck, not Postgres. An earlier,
+    // untested drop from 12 to 4 was too aggressive in that direction.
+    // 8 is a deliberate middle ground pending the next real test result,
+    // not a proven optimum -- re-tune from here based on which failure
+    // signature (Postgres-CPU-bound vs pool-starved) shows up next.
+    ingestPoolMax: envIntOrDefault("DB_INGEST_POOL_MAX", 8),
   },
   retention: {
     retentionDays: envIntOrDefault("RETENTION_DAYS", 30),
