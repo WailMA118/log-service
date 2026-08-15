@@ -13,7 +13,7 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
-ENV NODE_OPTIONS="--max-old-space-size=160"
+ENV NODE_OPTIONS="--max-old-space-size=192"
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev

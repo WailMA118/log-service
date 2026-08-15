@@ -9,6 +9,7 @@ services:
       -c max_wal_size=2GB
       -c checkpoint_completion_target=0.9
       -c gin_pending_list_limit=8MB
+      -c synchronous_commit=off
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-logs}
@@ -38,10 +39,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-logs}
       POSTGRES_DB: ${POSTGRES_DB:-logs}
       DB_QUERY_POOL_MAX: ${DB_QUERY_POOL_MAX:-6}
-      DB_INGEST_POOL_MAX: ${DB_INGEST_POOL_MAX:-4}
+      DB_INGEST_POOL_MAX: ${DB_INGEST_POOL_MAX:-8}
       RETENTION_DAYS: ${RETENTION_DAYS:-30}
       RETENTION_SWEEP_INTERVAL_MS: ${RETENTION_SWEEP_INTERVAL_MS:-3600000}
-      NODE_OPTIONS: "${NODE_OPTIONS:---max-old-space-size=160}"
+      NODE_OPTIONS: "${NODE_OPTIONS:---max-old-space-size=192}"
     depends_on:
       postgres:
         condition: service_healthy
