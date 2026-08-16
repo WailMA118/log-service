@@ -10,8 +10,20 @@ if (!DB_URL) {
  * Two postgres.js pools: queryClient for reads and ingestClient for hot
  * POST ingestion traffic.
  */
-export const queryClient = postgres(DB_URL, { max: config.db.queryPoolMax });
-export const ingestClient = postgres(DB_URL, { max: config.db.ingestPoolMax });
+export const queryClient = postgres(DB_URL, {
+  max: config.db.queryPoolMax,
+  connect_timeout: 10,
+  connection: {
+    statement_timeout: 5000,
+  },
+});
+export const ingestClient = postgres(DB_URL, {
+  max: config.db.ingestPoolMax,
+  connect_timeout: 10,
+  connection: {
+    statement_timeout: 30000,
+  },
+});
 
 export async function waitForDatabase(
   maxAttempts = 10,
