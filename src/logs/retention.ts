@@ -126,7 +126,13 @@ END $$;
  * model -- see the migration's comments on why it exists.
  */
 export async function runRetentionSweep(): Promise<void> {
-  const sql = postgres(DB_URL, { max: 1 });
+  const sql = postgres(DB_URL, {
+    max: 1,
+    connect_timeout: 10,
+    connection: {
+      statement_timeout: 10000,
+    },
+  });
   const sweepSql = buildRetentionSweepSql(
     config.retention.retentionDays,
     FUTURE_PARTITION_DAYS,
