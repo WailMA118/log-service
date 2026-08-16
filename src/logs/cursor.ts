@@ -16,7 +16,17 @@
 
 export type Cursor = {
   timestamp: string; // ISO string, matches the row's timestamp column
-  id: number;
+  // Stored and compared as a string, not a JS number. The `id` column is
+  // Postgres bigint (max ~9.2e18), while JS numbers only preserve
+  // integer precision up to Number.MAX_SAFE_INTEGER (~9.007e15).
+  // postgres.js already returns bigint columns as strings for exactly
+  // this reason (see LogRow['id'] in routes/logs.ts); round-tripping
+  // through a JS number here would silently corrupt any id beyond that
+  // threshold. Confirmed against a live Postgres instance: a string
+  // parameter compares correctly against a bigint column with no
+  // explicit cast needed, including for values beyond
+  // Number.MAX_SAFE_INTEGER.
+  id: string;
 };
 
 export function encodeCursor(cursor: Cursor): string {
@@ -40,13 +50,16 @@ export function decodeCursor(raw: string): Cursor | null {
     const candidate = parsed as Record<string, unknown>;
     const { timestamp, id } = candidate;
 
-    if (typeof timestamp !== "string" || typeof id !== "number") {
+    if (typeof timestamp !== "string" || typeof id !== "string") {
       return null;
     }
     if (Number.isNaN(new Date(timestamp).getTime())) {
       return null;
     }
-    if (!Number.isFinite(id) || !Number.isInteger(id)) {
+    // id must look like the non-negative integer a bigint IDENTITY
+    // column actually produces (see migration: MINVALUE 1) -- not an
+    // arbitrary numeric string like "1.5", "-1", "1e10", or "".
+    if (!/^\d+$/.test(id)) {
       return null;
     }
 
