@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSharedFilters } from "./filters.js";
+import { escapeLike, parseSharedFilters } from "./filters.js";
 
 /**
  * This file only unit-tests `parseSharedFilters`, the pure query-param
@@ -178,5 +178,42 @@ describe("parseSharedFilters", () => {
       q: "declined",
       attrs: { user_id: "42" },
     });
+  });
+});
+
+/**
+ * escapeLike is a pure function (no SQL fragment involved), so unlike
+ * buildFilterConditions it's safe and meaningful to unit test directly
+ * -- no fake `sql` tag needed. Confirmed against a live Postgres
+ * instance that this fixes a real bug: unescaped, `q=user_id` matched
+ * "userXid" and "user9id" in addition to the literal "user_id" (3 rows
+ * instead of 1), because `_` is a single-character LIKE wildcard.
+ */
+describe("escapeLike", () => {
+  it("escapes % so it is matched literally, not as a wildcard", () => {
+    expect(escapeLike("20%")).toBe("20\\%");
+  });
+
+  it("escapes _ so it is matched literally, not as a single-char wildcard", () => {
+    expect(escapeLike("user_id")).toBe("user\\_id");
+  });
+
+  it("escapes a literal backslash before escaping % or _ that follow it", () => {
+    // Input "a\_b" (backslash then underscore): both characters must be
+    // individually escaped so the escaped backslash doesn't accidentally
+    // "consume" the underscore's own escape.
+    expect(escapeLike("a\\_b")).toBe("a\\\\\\_b");
+  });
+
+  it("leaves ordinary characters untouched", () => {
+    expect(escapeLike("payment declined")).toBe("payment declined");
+  });
+
+  it("escapes multiple occurrences, not just the first", () => {
+    expect(escapeLike("50%_off_100%")).toBe("50\\%\\_off\\_100\\%");
+  });
+
+  it("handles an empty string", () => {
+    expect(escapeLike("")).toBe("");
   });
 });

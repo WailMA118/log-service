@@ -241,7 +241,10 @@ queryRouter.get("/logs", async (req: Request, res: Response) => {
     hasMore && page.length > 0
       ? encodeCursor({
           timestamp: new Date(page[page.length - 1].timestamp).toISOString(),
-          id: Number(page[page.length - 1].id),
+          // page[...].id is already a string -- postgres.js returns
+          // bigint columns as strings precisely to avoid the precision
+          // loss Number() would introduce here (see cursor.ts).
+          id: page[page.length - 1].id,
         })
       : null;
 

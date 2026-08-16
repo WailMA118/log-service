@@ -13,6 +13,26 @@ export type FilterParseError = { error: string };
 const ATTR_PREFIX = "attr.";
 
 /**
+ * Escapes the three characters that carry special meaning inside a
+ * Postgres LIKE/ILIKE pattern: `%` (any run of characters), `_` (any
+ * single character), and `\` itself (the escape character, which must
+ * be escaped first so a literal backslash in the user's search term
+ * isn't misread as escaping the character after it).
+ *
+ * Without this, `q=user_id` would match "userXid" and "user9id" just as
+ * readily as the literal "user_id" the caller typed -- confirmed
+ * against a live Postgres instance: unescaped, `q=user_id` matched 3
+ * rows instead of the 1 containing a literal underscore. Paired with
+ * `ESCAPE '\'` in the query (see buildFilterConditions) -- Postgres
+ * defaults to `\` as the LIKE escape character already, but naming it
+ * explicitly keeps the pattern's meaning independent of any session-
+ * level setting.
+ */
+export function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+/**
  * Parses the filter-related query params shared by GET /logs and
  * GET /logs/aggregate: service, level, attr.<key>, q.
  *
@@ -135,7 +155,8 @@ export function buildFilterConditions(
     conditions.push(sql`level = ${filters.level}`);
   }
   if (filters.q !== undefined) {
-    conditions.push(sql`message ILIKE ${"%" + filters.q + "%"}`);
+    const pattern = "%" + escapeLike(filters.q) + "%";
+    conditions.push(sql`message ILIKE ${pattern} ESCAPE '\\'`);
   }
   for (const [key, value] of Object.entries(filters.attrs)) {
     conditions.push(buildAttrCondition(sql, key, value));
