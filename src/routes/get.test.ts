@@ -126,7 +126,7 @@ describe("GET /logs", () => {
       const decoded = decodeCursor(body.next_cursor as string);
       expect(decoded).toEqual({
         timestamp: "2026-08-05T12:01:00.000Z",
-        id: 2,
+        id: "2",
       });
     });
   });
@@ -228,7 +228,7 @@ describe("GET /logs", () => {
     it("accepts a well-formed cursor from a previous response", async () => {
       const cursor = encodeCursor({
         timestamp: "2026-08-05T12:00:00.000Z",
-        id: 5,
+        id: "5",
       });
 
       const response = await withServer(createApp(), (baseUrl) =>
