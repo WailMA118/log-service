@@ -34,20 +34,16 @@ const OID_JSONB_ARRAY = 3807;
  * filters.ts, both assume `attributes` is a jsonb object, not a jsonb
  * string wrapping JSON text).
  */
-async function insertBatch(entries: ValidatedLogEntry[]): Promise<void> {
-  if (entries.length === 0) return;
+async function insertBatch(entries: ValidatedLogEntry[]): Promise<number> {
+  if (entries.length === 0) return 0;
 
   const timestamps = entries.map((e) => e.timestamp);
   const levels = entries.map((e) => e.level);
   const services = entries.map((e) => e.service);
   const messages = entries.map((e) => e.message);
-  // postgres.js's TypeScript definitions for sql.array() don't model
-  // "array of plain JSON-serializable objects, to be bound as jsonb[]"
-  // as a valid SerializableParameter shape, even though this is
-  // correct and necessary at runtime (see the comment above) -- the
-  // cast below is narrow and specifically justified by that gap, not a
-  // blanket type-safety opt-out.
   const attributes = entries.map((e) => e.attributes) as unknown as string[];
+
+  const start = performance.now();
 
   await ingestClient`
     INSERT INTO logs (timestamp, level, service, message, attributes)
@@ -59,6 +55,9 @@ async function insertBatch(entries: ValidatedLogEntry[]): Promise<void> {
       ${ingestClient.array(attributes, OID_JSONB_ARRAY)}
     )
   `;
+
+  const insertMs = performance.now() - start;
+  return insertMs;
 }
 
 ingestRouter.post("/logs", async (req: Request, res: Response) => {
@@ -78,7 +77,9 @@ ingestRouter.post("/logs", async (req: Request, res: Response) => {
   }
 
   const rawEntries = (body as { logs: unknown[] }).logs;
+  const validationStart = performance.now();
   const { accepted, rejected } = validateBatch(rawEntries);
+  const validationMs = performance.now() - validationStart;
 
   if (accepted.length === 0) {
     res.status(400).json({ accepted: 0, rejected });
@@ -86,7 +87,12 @@ ingestRouter.post("/logs", async (req: Request, res: Response) => {
   }
 
   try {
-    await insertBatch(accepted);
+    const insertMs = await insertBatch(accepted);
+    if (Math.random() < 0.01) {
+      console.log(
+        `[ingest-profile] batch=${accepted.length} validation=${validationMs.toFixed(2)}ms insert=${insertMs.toFixed(2)}ms`,
+      );
+    }
   } catch (err) {
     console.error("[ingest] insert failed:", err);
     res.status(500).json({ error: "internal error while storing logs" });
@@ -236,10 +242,8 @@ queryRouter.get("/logs", async (req: Request, res: Response) => {
       LIMIT ${limit + 1}
     `;
   } catch (err) {
-    // Same statement_timeout exposure as /logs/aggregate (see comment
-    // there) -- both routes share queryClient's 5s timeout.
-    console.error("[query] GET /logs query failed:", err);
-    res.status(503).json({ error: "query timed out, please retry" });
+    console.error("[query] GET /logs failed:", err);
+    res.status(503).json({ error: "database query unavailable, please retry" });
     return;
   }
 
