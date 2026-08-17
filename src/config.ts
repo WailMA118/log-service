@@ -57,10 +57,9 @@ export const config: Config = {
     // 26% and throughput collapsed), which only makes sense if the app's
     // OWN connection pool was the bottleneck, not Postgres. An earlier,
     // untested drop from 12 to 4 was too aggressive in that direction.
-    // 8 is a deliberate middle ground pending the next real test result,
-    // not a proven optimum -- re-tune from here based on which failure
-    // signature (Postgres-CPU-bound vs pool-starved) shows up next.
-    ingestPoolMax: envIntOrDefault("DB_INGEST_POOL_MAX", 8),
+    // 1 is the current default for this test run.
+    // Keep this value in sync with the docker and env defaults.
+    ingestPoolMax: envIntOrDefault("DB_INGEST_POOL_MAX", 1),
   },
   retention: {
     retentionDays: envIntOrDefault("RETENTION_DAYS", 30),

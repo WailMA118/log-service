@@ -226,13 +226,22 @@ queryRouter.get("/logs", async (req: Request, res: Response) => {
 
   // Fetch one extra row to determine whether a next page exists, without
   // exposing that extra row to the client.
-  const rows = await sql<LogRow[]>`
-    SELECT id, timestamp, level, service, message, attributes
-    FROM logs
-    ${whereClause}
-    ORDER BY timestamp DESC, id DESC
-    LIMIT ${limit + 1}
-  `;
+  let rows: LogRow[];
+  try {
+    rows = await sql<LogRow[]>`
+      SELECT id, timestamp, level, service, message, attributes
+      FROM logs
+      ${whereClause}
+      ORDER BY timestamp DESC, id DESC
+      LIMIT ${limit + 1}
+    `;
+  } catch (err) {
+    // Same statement_timeout exposure as /logs/aggregate (see comment
+    // there) -- both routes share queryClient's 5s timeout.
+    console.error("[query] GET /logs query failed:", err);
+    res.status(503).json({ error: "query timed out, please retry" });
+    return;
+  }
 
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;

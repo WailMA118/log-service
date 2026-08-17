@@ -50,10 +50,6 @@ CREATE TABLE "logs" (
 CREATE INDEX "logs_service_level_timestamp_idx"
 	ON "logs" ("service", "level", "timestamp" DESC);--> statement-breakpoint
 
--- Query pattern for timestamp/service/level ordering and filtering.
-CREATE INDEX "logs_timestamp_service_level_idx"
-	ON "logs" ("timestamp", "service", "level");--> statement-breakpoint
-
 -- Keyset pagination and pure time-range queries (GET /logs with only
 -- since/until, or GET /logs/aggregate bucketing) both hit timestamp alone.
 CREATE INDEX "logs_timestamp_id_idx"

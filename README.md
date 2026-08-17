@@ -267,7 +267,7 @@ All configuration is via environment variables (see `.env.example`), parsed in `
 | `PORT` | `3000` (Docker sets `8080`) | HTTP listen port |
 | `DB_URL` | `postgres://localhost:5432/logs` | Postgres connection string |
 | `DB_QUERY_POOL_MAX` | `6` | Max connections in the read/query pool (`GET /logs`, `GET /logs/aggregate`, health checks) |
-| `DB_INGEST_POOL_MAX` | `12` | Max connections in the write/ingest pool (`POST /logs` only) — kept separate from the query pool so a burst of expensive aggregate queries can never starve ingestion throughput, and vice versa |
+| `DB_INGEST_POOL_MAX` | `1` | Max connections in the write/ingest pool (`POST /logs` only) — kept separate from the query pool so a burst of expensive aggregate queries can never starve ingestion throughput, and vice versa |
 | `RETENTION_DAYS` | `30` | How many days of data to retain before a partition is dropped |
 | `RETENTION_SWEEP_INTERVAL_MS` | `3600000` (1 hour) | How often the retention sweep runs |
 
