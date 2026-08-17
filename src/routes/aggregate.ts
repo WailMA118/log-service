@@ -157,17 +157,8 @@ aggregateRouter.get("/logs/aggregate", async (req: Request, res: Response) => {
       ORDER BY bucket_start
     `;
   } catch (err) {
-    // Under sustained write load, Postgres can hit queryClient's
-    // statement_timeout (5s, see db/client.ts) before this query
-    // finishes -- confirmed against a live load test where every
-    // aggregate response bottomed out at exactly ~5.0s and errored.
-    // Without this catch, the rejection propagated as an unhandled
-    // Express 5 async error -> a generic non-JSON 500, breaking the
-    // API contract's `{ "error": "<description>" }` shape on every
-    // failure. This still surfaces the failure as a clear 503, it just
-    // stops it from leaking as a raw framework error.
-    console.error("[aggregate] query failed:", err);
-    res.status(503).json({ error: "aggregate query timed out, please retry" });
+    console.error("[query] GET /logs/aggregate failed:", err);
+    res.status(503).json({ error: "database query unavailable, please retry" });
     return;
   }
 
