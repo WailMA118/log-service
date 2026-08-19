@@ -45,28 +45,10 @@ CREATE TABLE "logs" (
 -- future), so we only ever declare them once here -- never per-partition.
 -- ============================================================================
 
--- Dominant query shape: filter by service + level, sorted by timestamp desc.
--- Matches GET /logs with service/level filters and the default sort order.
-CREATE INDEX "logs_service_level_timestamp_idx"
-	ON "logs" ("service", "level", "timestamp" DESC);--> statement-breakpoint
-
 -- Keyset pagination and pure time-range queries (GET /logs with only
 -- since/until, or GET /logs/aggregate bucketing) both hit timestamp alone.
 CREATE INDEX "logs_timestamp_id_idx"
 	ON "logs" ("timestamp" DESC, "id" DESC);--> statement-breakpoint
-
--- attr.<key> equality lookups against the JSONB attributes column.
--- jsonb_path_ops is smaller and faster than the default jsonb_ops for
--- containment (@>) queries, at the cost of not supporting key-existence
--- (?) queries -- which we don't need for attr.<key>=value equality lookups.
-CREATE INDEX "logs_attributes_gin_idx"
-	ON "logs" USING gin ("attributes" jsonb_path_ops);--> statement-breakpoint
-
--- Case-insensitive substring search on `message` (the `q` query param).
--- gin_trgm_ops supports ILIKE '%term%' efficiently, which a plain btree
--- cannot do for substring (non-prefix) matches.
-CREATE INDEX "logs_message_trgm_idx"
-	ON "logs" USING gin ("message" gin_trgm_ops);--> statement-breakpoint
 
 -- ============================================================================
 -- Initial partitions.
